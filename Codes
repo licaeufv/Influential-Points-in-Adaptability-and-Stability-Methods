@@ -1,0 +1,349 @@
+setwd("C:\\Moyses\\2019\\Artigo - RQ - Algodão")
+dados <- read.table("mga_PROD.dat",h=F)
+ngen <- 12 #number of genotypes
+namb <- 19 #number of enviroments
+
+#Data organization
+mga <- matrix(dados[,3],ngen,namb, byrow=T)
+Ia <- colMeans(mga)-mean(mga)
+dados_reg <- rbind(mga,Ia,1:namb)
+dados_reg <- t(dados_reg)
+dados_reg1 <- dados_reg[order(dados_reg[,(ngen+1)]),]
+
+#Figure - Box-Plot
+source("https://raw.githubusercontent.com/talgalili/R-code-snippets/master/boxplot.with.outlier.label.r") 
+#install.packages("TeachingDemos")
+library(TeachingDemos)
+lab_y <-  as.numeric(dados$V2)
+
+a <- rep(1,19)
+# Degradê de vermelho para amarelo (color definition)
+corDegrade <- colorRampPalette(c("white","darkblue"))
+cores <- corDegrade(19)
+
+ordem_Ia <- dados_reg1[,(ngen+2)]
+cores1 <- data.frame(cores, ordem_Ia)
+cores2 <- cores1[order(cores1[,2]),]
+
+layout(rbind(1,2), heights=c(7,1))  # put legend on bottom 1/8th of the chart
+boxplot.with.outlier.label(dados$V3 ~ dados$V1,lab_y,
+xlab="Genotypes",ylab="Yield over enviroments", label.col = "black")
+
+# setup for no margins on the legend
+par(mar=c(0, 0, 0, 0))
+# c(bottom, left, top, right)
+plot.new()
+legend("center", inset=-2, title="Enviroments according to their index (From Less to Higher)",
+   c("5","18","10","15","4","14","8","11","6","12","19","17","13","7","16","2","3","8","1"), #fill=cores, horiz=TRUE, cex=1.2,bty ="n",x.intersp	
+ horiz=TRUE, cex=1,bty ="n",x.intersp=0)
+
+
+
+
+
+
+
+
+
+##Regressão Quantílica (Quantile Regression)
+
+library(quantreg)
+QMR <- 23035.84737 #(MSE from jointly anova)
+r <- 4
+gl <- 627
+
+
+teste0.5Q<-matrix(NA,ngen,1)
+beta10.5Q<-matrix(NA,ngen,1)
+beta00.5Q<-matrix(NA,ngen,1)
+R20.5Q<-matrix(NA,ngen,1)
+
+for(i in 1:ngen)
+{
+    reg1<-rq(dados_reg1[,i]~dados_reg1[,(ngen+1)],tau=0.50)
+    b1=reg1$coefficients
+    beta10.5Q[i,1]<-b1[2]
+    beta00.5Q[i,1]<-b1[1]
+    t<-(beta10.5Q-1)/sqrt((QMR/r)/sum((dados_reg1[,(ngen+1)])^2))
+    p_valor <-2*(pt(abs(t),gl,lower.tail=F))
+    teste0.5Q<-(p_valor<0.05)
+
+   #Coeficiente de Determinação RQ
+    p1 <- sum(abs(0.5 * reg1$residuals[reg1$residuals>0]))
+    p2 <- sum(abs(0.5 * reg1$residuals[reg1$residuals<0]))
+    V1 <- p1 + p2
+    V1
+
+    reg0<-rq(dados_reg1[,i]~1,tau=0.50)
+    p10 <- sum(abs(0.5 * reg0$residuals[reg0$residuals>0]))
+    p20 <- sum(abs(0.5 * reg0$residuals[reg0$residuals<0]))
+   V0 <- p10 + p20
+   V0
+   R2 <- 1 - (V1/V0)
+   R20.5Q[i,1] <- R2
+
+}
+teste0.5Q
+R20.5Q
+
+
+####Outros testes
+summary(reg1,se = "boot", bsmethod= "xy") 
+summary(reg1,se = "boot", bsmethod= "pwy")  
+#####
+
+#Coeficiente de Determinação RQ
+p1 <- sum(abs(0.5 * reg1$residuals[reg1$residuals>0]))
+p2 <- sum(abs(0.5 * reg1$residuals[reg1$residuals<0]))
+V1 <- p1 + p2
+V1
+
+reg0<-rq(dados_reg1[,i]~1,tau=0.50)
+p10 <- sum(abs(0.5 * reg0$residuals[reg0$residuals>0]))
+p20 <- sum(abs(0.5 * reg0$residuals[reg0$residuals<0]))
+V0 <- p10 + p20
+V0
+
+R2 <- 1 - (V1/V0)
+R2
+
+
+
+
+
+##Regressão Não paramétrica
+
+#############PACOTE MBLM
+
+library(mblm)
+
+testeT<-matrix(NA,ngen,1)
+beta1T<-matrix(NA,ngen,1)
+beta0T<-matrix(NA,ngen,1)
+
+for(i in 1:ngen)
+{
+    y<-dados_reg1[,i]
+    x<-dados_reg1[,(ngen+1)]
+    reg<-mblm(y~x)
+    b=reg$coefficients
+    beta1T[i,1]<-b[2]   
+    beta0T[i,1]<-b[1]
+    t<-(beta1T-1)/sqrt((QMR/r)/sum((dados_reg1[,(ngen+1)])^2))
+    p_valor<-2*(pt(abs(t), gl,lower.tail=F))
+    testeT<-(p_valor<0.05)
+}
+ cbind(beta0T, beta1T,testeT)
+
+
+write.table(beta1T,"beta1T.txt",row.names=FALSE,quote=FALSE)
+write.table(testeT,"testeT.txt",row.names=FALSE,quote=FALSE)
+
+
+###Análise Inserindo outliers
+
+
+
+######################Inserindo outliers
+
+amb1 <- dados[dados$V2==1,]
+resumo1 <- summary(amb1[,3])
+IQ <-  resumo1[[5]]- resumo1[[2]]
+IQ 
+Corte1 <- 1.5 * IQ
+bigode1 <- resumo1[[5]]+Corte1
+bigode1
+
+aa = boxplot(amb1$V3~amb1$V2)
+aa
+
+amb1[12,3]<- resumo1[[5]]+2*(1.5*(resumo1[[5]]-resumo1[[2]]))
+
+aa = boxplot(amb1$V3~amb1$V2)
+aa
+
+##
+amb5 <- dados[dados$V2==5,]
+resumo2 <- summary(amb5[,3])
+IQ2 <-  resumo2[[5]]- resumo2[[2]]
+IQ2 
+Corte2 <- 1.5 * IQ2
+bigode2 <- resumo2[[5]]+Corte2
+bigode2
+
+aa = boxplot(amb5$V3~amb5$V2)
+aa
+
+amb5[12,3] <- resumo2[[5]]+2*(1.5*(resumo2[[5]]-resumo2[[2]]))
+
+aa = boxplot(amb5$V3~amb5$V2)
+aa
+
+
+###
+
+dadosout <- dados 
+dadosout[(dadosout$V1==12 & dadosout$V2==5),3] <- resumo1[[5]]-2*(1.5*(resumo1[[5]]-resumo1[[2]]))
+dadosout[(dadosout$V1==1 & dadosout$V2==1),3] <- resumo2[[5]]+2*(1.5*(resumo2[[5]]-resumo2[[2]]))
+
+
+
+##Construindo box-plot
+source("https://raw.githubusercontent.com/talgalili/R-code-snippets/master/boxplot.with.outlier.label.r") 
+#install.packages("TeachingDemos")
+#library(TeachingDemos)
+lab_y <-  as.numeric(gl(12,19))
+
+
+a <- rep(1,namb)
+# Degradê de vermelho para amarelo
+corDegrade <- colorRampPalette(c("white","darkblue"))
+cores <- corDegrade(namb)
+
+ordem_Ia <- dados_reg1[,(ngen+2)]
+cores1 <- data.frame(cores, ordem_Ia)
+cores2 <- cores1[order(cores1[,2]),]
+
+layout(rbind(1,2), heights=c(7,1))  # put legend on bottom 1/8th of the chart
+boxplot.with.outlier.label(dadosout$V3~dadosout$V2, lab_y,
+xlab="Enviroments",ylab="Yield", col = as.character(cores2[,1]) ,label.col = "black")
+
+# setup for no margins on the legend
+par(mar=c(0, 0, 0, 0))
+# c(bottom, left, top, right)
+plot.new()
+legend("center", inset=-2, title="Enviromental Index (From Less to Higher)",
+   c("","","","","","","","","","","","","","","","","","",""), fill=cores, horiz=TRUE, cex=1.2,bty ="n",x.intersp	
+=-1)
+
+
+##########
+
+set.seed(123)
+#Genótipo 1 - ambiente 1
+resumo1[[5]]-2*(1.5*(resumo1[[5]]-resumo1[[2]]))+rnorm(4)
+
+#Genótipo 12 - ambiente 5
+resumo2[[5]]+2*(1.5*(resumo2[[5]]-resumo2[[2]])) + rnorm(4)
+
+
+###########Análise de adaptabilidade e estabilidade dados com outliers
+
+
+setwd("C:\\Moyses\\2019\\Artigo - RQ - Algodão")
+dados <- read.table("mga_OUT.dat",h=F)
+ngen <- 12
+namb <- 19
+
+
+mga <- matrix(dados[,3],ngen,namb, byrow=T)
+
+Ia <- colMeans(mga)-mean(mga)
+
+dados_reg <- rbind(mga,Ia,1:namb)
+dados_reg <- t(dados_reg)
+
+dados_reg1 <- dados_reg[order(dados_reg[,(ngen+1)]),]
+
+
+
+##Regressão Quantílica
+
+library(quantreg)
+QMR <- 22885.29436 
+
+r <- 4
+gl <- 627
+
+
+teste0.5Q<-matrix(NA,ngen,1)
+beta10.5Q<-matrix(NA,ngen,1)
+beta00.5Q<-matrix(NA,ngen,1)
+R20.5Q<-matrix(NA,ngen,1)
+
+for(i in 1:ngen)
+{
+    reg1<-rq(dados_reg1[,i]~dados_reg1[,(ngen+1)],tau=0.50)
+    b1=reg1$coefficients
+    beta10.5Q[i,1]<-b1[2]
+    beta00.5Q[i,1]<-b1[1]
+    t<-(beta10.5Q-1)/sqrt((QMR/r)/sum((dados_reg1[,(ngen+1)])^2))
+    p_valor <-2*(pt(abs(t),gl,lower.tail=F))
+    teste0.5Q<-(p_valor<0.05)
+
+   #Coeficiente de Determinação RQ
+    p1 <- sum(abs(0.5 * reg1$residuals[reg1$residuals>0]))
+    p2 <- sum(abs(0.5 * reg1$residuals[reg1$residuals<0]))
+    V1 <- p1 + p2
+    V1
+
+    reg0<-rq(dados_reg1[,i]~1,tau=0.50)
+    p10 <- sum(abs(0.5 * reg0$residuals[reg0$residuals>0]))
+    p20 <- sum(abs(0.5 * reg0$residuals[reg0$residuals<0]))
+   V0 <- p10 + p20
+   V0
+   R2 <- 1 - (V1/V0)
+   R20.5Q[i,1] <- R2
+
+}
+cbind(teste0.5Q,beta00.5Q, beta10.5Q, R20.5Q)
+
+
+####Outros testes
+summary(reg1,se = "boot", bsmethod= "xy") 
+summary(reg1,se = "boot", bsmethod= "pwy")  
+#####
+
+#Coeficiente de Determinação RQ
+p1 <- sum(abs(0.5 * reg1$residuals[reg1$residuals>0]))
+p2 <- sum(abs(0.5 * reg1$residuals[reg1$residuals<0]))
+V1 <- p1 + p2
+V1
+
+reg0<-rq(dados_reg1[,i]~1,tau=0.50)
+p10 <- sum(abs(0.5 * reg0$residuals[reg0$residuals>0]))
+p20 <- sum(abs(0.5 * reg0$residuals[reg0$residuals<0]))
+V0 <- p10 + p20
+V0
+
+R2 <- 1 - (V1/V0)
+R2
+
+
+
+
+
+##Regressão Não paramétrica
+
+#############PACOTE MBLM
+
+library(mblm)
+
+testeT<-matrix(NA,ngen,1)
+beta1T<-matrix(NA,ngen,1)
+beta0T<-matrix(NA,ngen,1)
+
+for(i in 1:ngen)
+{
+    y<-dados_reg1[,i]
+    x<-dados_reg1[,(ngen+1)]
+    reg<-mblm(y~x)
+    b=reg$coefficients
+    beta1T[i,1]<-b[2]   
+    beta0T[i,1]<-b[1]
+    t<-(beta1T-1)/sqrt((QMR/r)/sum((dados_reg1[,(ngen+1)])^2))
+    p_valor<-2*(pt(abs(t), gl,lower.tail=F))
+    testeT<-(p_valor<0.05)
+}
+ cbind(beta0T, beta1T,testeT)
+
+
+
+############Figures for each genotype
+i=1
+
+dfigure <- as.data.frame(dados_reg1)
+ggplot(dfigure, aes(x=Ia, y=V1) + geom_point()
+
+
+plot(dados_reg1[,i]~dados_reg1[,(ngen+1)])
